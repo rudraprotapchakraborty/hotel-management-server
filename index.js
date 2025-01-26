@@ -117,7 +117,7 @@ async function run() {
 
     // Endpoint: Get all meals with search, filter, and pagination
     app.get('/meal', async (req, res) => {
-      const { search = '', category = '', minPrice = 0, maxPrice = 50, page = 1, limit = 10 } = req.query;
+      const { search = '', category = '', minPrice = 0, maxPrice = 50, page = 1, limit = 100 } = req.query;
 
       const query = {
         ...(search && { name: { $regex: search, $options: 'i' } }),
@@ -132,6 +132,13 @@ async function run() {
 
       const cursor = mealCollection.find(query, options);
       const meal = await cursor.toArray();
+      res.send(meal);
+    });
+
+    app.get('/meal/:id', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const meal = await mealCollection.findOne(query);
       res.send(meal);
     });
 
