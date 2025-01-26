@@ -24,9 +24,17 @@ async function run() {
     // Connect the client to the server (optional starting in v4.7)
     await client.connect();
 
+    const userCollection = client.db('hotelDb').collection('users');
     const mealCollection = client.db('hotelDb').collection('meal');
     const reviewCollection = client.db('hotelDb').collection('reviews');
     const cartCollection = client.db('hotelDb').collection('carts');
+
+    // Endpoint: Get all users
+    app.post('/users', async (req, res) => {
+      const user = req.body;
+      const result = await userCollection.insertOne(user);
+      res.send(result);
+    });
 
     // Endpoint: Get all meals with search, filter, and pagination
     app.get('/meal', async (req, res) => {
