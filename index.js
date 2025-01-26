@@ -30,6 +30,12 @@ async function run() {
     const cartCollection = client.db('hotelDb').collection('carts');
 
     // Endpoint: Get all users
+    app.get('/users', async (req, res) => {
+      const cursor = userCollection.find();
+      const users = await cursor.toArray();
+      res.send(users);
+    });
+
     app.post('/users', async (req, res) => {
       const user = req.body;
       const query = { email: user.email };
