@@ -141,6 +141,13 @@ async function run() {
       res.send(result);
     });
 
+    app.delete('/meal/:id', verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await mealCollection.deleteOne(query);
+      res.send(result);
+    });
+
     // Endpoint: Get reviews
     app.get('/reviews', async (req, res) => {
       const cursor = reviewCollection.find({});
