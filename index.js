@@ -1,6 +1,7 @@
 const express = require('express');
 const app = express();
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 const port = process.env.PORT || 5000;
 require('dotenv').config();
 
@@ -21,7 +22,7 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server (optional starting in v4.7)
+    // Connect the client to the server (optional startFing in v4.7)
     await client.connect();
 
     const userCollection = client.db('hotelDb').collection('users');
@@ -29,11 +30,58 @@ async function run() {
     const reviewCollection = client.db('hotelDb').collection('reviews');
     const cartCollection = client.db('hotelDb').collection('carts');
 
+    //jwt related apis
+    app.post('/jwt', (req, res) => {
+      const token = jwt.sign(req.body, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
+      res.send({ token });
+    });
+
+    //middlewares
+    const verifyToken = (req, res, next) => {
+      if (!req.headers.authorization) {
+        return res.status(401).send('Unauthorized request');
+      }
+      const token = req.headers.authorization.split(' ')[1];
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+          return res.status(401).send('Token is not valid');
+        }
+        req.decoded = decoded;
+        next();
+      });
+    };
+
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isAdmin = user?.role === 'admin';
+      if (!isAdmin) {
+        return res.status(403).send('Unauthorized request');
+      }
+      next();
+    };
+
     // Endpoint: Get all users
-    app.get('/users', async (req, res) => {
-      const cursor = userCollection.find();
+    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+      const cursor = userCollection.find({});
       const users = await cursor.toArray();
       res.send(users);
+    });
+
+    app.get('/users/admin/:email', verifyToken, async (req, res) => {
+      const email = req.params.email;
+      if (email !== req.decoded.email) {
+        return res.status(403).send('Unauthorized request');
+      }
+
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      let admin = false;
+      if (user) {
+        admin = user?.role === 'admin';
+      }
+      res.send({ admin });
     });
 
     app.post('/users', async (req, res) => {
@@ -41,10 +89,29 @@ async function run() {
       const query = { email: user.email };
       const existingUser = await userCollection.findOne(query);
       if (existingUser) {
-        res.send({ message: 'User already exists' });
+        res.send({ status: 'User already exists' });
         return;
       }
       const result = await userCollection.insertOne(user);
+      res.send(result);
+    });
+
+    app.patch('/users/admin/:id', verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          role: 'admin'
+        },
+      };
+      const result = await userCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+
+    app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await userCollection.deleteOne(query);
       res.send(result);
     });
 
