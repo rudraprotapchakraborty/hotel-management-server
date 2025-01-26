@@ -135,7 +135,7 @@ async function run() {
       res.send(meal);
     });
 
-    app.post('/meal', async (req, res) => {
+    app.post('/meal', verifyToken, verifyAdmin, async (req, res) => {
       const item = req.body;
       const result = await mealCollection.insertOne(item);
       res.send(result);
