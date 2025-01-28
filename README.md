@@ -1,7 +1,7 @@
 # Hostel Management System - Server Side
 
 ## Live URL:
-- https://hotel-management-server-liart.vercel.app/
+- https://hotel-management-server-one.vercel.app/
 
 ## Overview
 This repository contains the server-side implementation of the **Hostel Management System** using the MERN stack. The server handles all backend operations, including managing student data, meals, and food reviews. It also provides RESTful APIs for the client-side to interact with the database.
