@@ -4,6 +4,7 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const port = process.env.PORT || 5000;
 require('dotenv').config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 app.use(cors());
 app.use(express.json());
@@ -117,7 +118,7 @@ async function run() {
 
     // Endpoint: Get all meals with search, filter, and pagination
     app.get('/meal', async (req, res) => {
-      const { search = '', category = '', minPrice = 0, maxPrice = 50, page = 1, limit = 100 } = req.query;
+      const { search = '', category = '', minPrice = 0, maxPrice = 500, page = 1, limit = 100 } = req.query;
 
       const query = {
         ...(search && { name: { $regex: search, $options: 'i' } }),
@@ -198,6 +199,22 @@ async function run() {
       const query = { _id: new ObjectId(id) };
       const result = await cartCollection.deleteOne(query);
       res.send(result);
+    });
+
+    //payment intent
+    app.post('create-payment-intent', async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price) * 100;
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        payment_method_types: ['card'],
+      });
+
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
     });
 
     // Send a ping to confirm a successful connection
