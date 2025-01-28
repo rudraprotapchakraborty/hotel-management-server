@@ -30,6 +30,7 @@ async function run() {
     const mealCollection = client.db('hotelDb').collection('meal');
     const reviewCollection = client.db('hotelDb').collection('reviews');
     const cartCollection = client.db('hotelDb').collection('carts');
+    const paymentCollection = client.db('hotelDb').collection('payments');
 
     //jwt related apis
     app.post('/jwt', (req, res) => {
@@ -202,7 +203,7 @@ async function run() {
     });
 
     //payment intent
-    app.post('create-payment-intent', async (req, res) => {
+    app.post('/create-payment-intent', async (req, res) => {
       const { price } = req.body;
       const amount = parseInt(price) * 100;
 
@@ -215,6 +216,16 @@ async function run() {
       res.send({
         clientSecret: paymentIntent.client_secret,
       });
+    });
+
+    app.post('/payments', async (req, res) => {
+      const payment = req.body;
+      const paymentResult = await paymentCollection.insertOne(payment);
+      const query = {_id: {
+        $in: payment.cartIds.map(id => new ObjectId(id))
+      }}
+      const deleteResult = await cartCollection.deleteMany(query);
+      res.send({paymentResult, deleteResult});
     });
 
     // Send a ping to confirm a successful connection
