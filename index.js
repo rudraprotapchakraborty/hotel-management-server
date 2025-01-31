@@ -24,13 +24,14 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server (optional startFing in v4.7)
-    // await client.connect();
+    await client.connect();
 
     const userCollection = client.db('hotelDb').collection('users');
     const mealCollection = client.db('hotelDb').collection('meal');
     const reviewCollection = client.db('hotelDb').collection('reviews');
     const cartCollection = client.db('hotelDb').collection('carts');
     const paymentCollection = client.db('hotelDb').collection('payments');
+    const membershipCollection = client.db('hotelDb').collection('membership');
 
     //jwt related apis
     app.post('/jwt', (req, res) => {
@@ -63,6 +64,20 @@ async function run() {
       }
       next();
     };
+
+    // Endpoint: Get all memberships
+    app.get('/membership', async (req, res) => {
+      const cursor = membershipCollection.find({});
+      const membership = await cursor.toArray();
+      res.send(membership);
+    });
+
+    app.get('/membership/:id', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const membership = await membershipCollection.findOne(query);
+      res.send(membership);
+    });
 
     // Endpoint: Get all users
     app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
@@ -119,23 +134,36 @@ async function run() {
 
     // Endpoint: Get all meals with search, filter, and pagination
     app.get('/meal', async (req, res) => {
-      const { search = '', category = '', minPrice = 0, maxPrice = 500, page = 1, limit = 100 } = req.query;
-
+      const {
+        search = '', 
+        category = '', 
+        minPrice = 0, 
+        maxPrice = 500, 
+        page = 1, 
+        limit = 100,
+        upcoming 
+      } = req.query;
+    
       const query = {
         ...(search && { name: { $regex: search, $options: 'i' } }),
         ...(category && { category }),
         price: { $gte: parseFloat(minPrice), $lte: parseFloat(maxPrice) },
+        ...(upcoming === 'true' && { upcoming: true }) 
       };
-
+    
       const options = {
         skip: (parseInt(page) - 1) * parseInt(limit),
         limit: parseInt(limit),
       };
-
-      const cursor = mealCollection.find(query, options);
-      const meal = await cursor.toArray();
-      res.send(meal);
-    });
+    
+      try {
+        const meal = await mealCollection.find(query, options).toArray();
+        res.send(meal);
+      } catch (error) {
+        console.error("Error fetching meals:", error);
+        res.status(500).send({ error: "Failed to fetch meals" });
+      }
+    });    
 
     app.get('/meal/:id', async (req, res) => {
       const id = req.params.id;
@@ -236,10 +264,11 @@ async function run() {
       const deleteResult = await cartCollection.deleteMany(query);
       res.send({paymentResult, deleteResult});
     });
+    
 
     // Send a ping to confirm a successful connection
-    // await client.db('admin').command({ ping: 1 });
-    // console.log('Pinged your deployment. You successfully connected to MongoDB!');
+    await client.db('admin').command({ ping: 1 });
+    console.log('Pinged your deployment. You successfully connected to MongoDB!');
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
