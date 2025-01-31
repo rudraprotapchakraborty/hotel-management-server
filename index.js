@@ -32,6 +32,7 @@ async function run() {
     const cartCollection = client.db('hotelDb').collection('carts');
     const paymentCollection = client.db('hotelDb').collection('payments');
     const membershipCollection = client.db('hotelDb').collection('membership');
+    const requestCollection = client.db('hotelDb').collection('requests');
 
     //jwt related apis
     app.post('/jwt', (req, res) => {
@@ -80,11 +81,23 @@ async function run() {
     });
 
     // Endpoint: Get all users
-    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+    app.get('/users', async (req, res) => {
       const cursor = userCollection.find({});
       const users = await cursor.toArray();
       res.send(users);
     });
+
+    app.get('/users/:email', async (req, res) => {
+      const { email } = req.params;
+      const user = await userCollection.findOne({ email: email });
+
+      if (user) {
+        res.send(user);
+      } else {
+        res.status(404).send({ message: 'User not found' });
+      }
+    });
+
 
     app.get('/users/admin/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
@@ -135,27 +148,27 @@ async function run() {
     // Endpoint: Get all meals with search, filter, and pagination
     app.get('/meal', async (req, res) => {
       const {
-        search = '', 
-        category = '', 
-        minPrice = 0, 
-        maxPrice = 500, 
-        page = 1, 
+        search = '',
+        category = '',
+        minPrice = 0,
+        maxPrice = 500,
+        page = 1,
         limit = 100,
-        upcoming 
+        upcoming
       } = req.query;
-    
+
       const query = {
         ...(search && { name: { $regex: search, $options: 'i' } }),
         ...(category && { category }),
         price: { $gte: parseFloat(minPrice), $lte: parseFloat(maxPrice) },
-        ...(upcoming === 'true' && { upcoming: true }) 
+        ...(upcoming === 'true' && { upcoming: true })
       };
-    
+
       const options = {
         skip: (parseInt(page) - 1) * parseInt(limit),
         limit: parseInt(limit),
       };
-    
+
       try {
         const meal = await mealCollection.find(query, options).toArray();
         res.send(meal);
@@ -163,7 +176,7 @@ async function run() {
         console.error("Error fetching meals:", error);
         res.status(500).send({ error: "Failed to fetch meals" });
       }
-    });    
+    });
 
     app.get('/meal/:id', async (req, res) => {
       const id = req.params.id;
@@ -178,22 +191,56 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/meal/:id', verifyToken, verifyAdmin, async (req, res) => {
-      const item = req.body;
+    app.patch('/meal/:id', async (req, res) => {
+      const item = req.body;  // The body contains fields to update (name, category, etc.)
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
+
+      // Prepare update fields
       const updatedDoc = {
-        $set: {
-          name: item.name,
-          category: item.category,
-          price: item.price,
-          recipe: item.recipe,
-          image: item.image,
-        },
+        $inc: { likes: 1 },  // Increment the likes count by 1 (if needed)
+        $set: {}  // To set the other fields if provided
       };
-      const result = await mealCollection.updateOne(filter, updatedDoc);
-      res.send(result);
+
+      // Convert likes to a number if it is stored as a string
+      if (item.likes) {
+        updatedDoc.$set.likes = Number(item.likes);
+      }
+
+      // Check if fields are present and update accordingly
+      if (item.name) updatedDoc.$set.name = item.name;
+      if (item.category) updatedDoc.$set.category = item.category;
+      if (item.price) updatedDoc.$set.price = item.price;
+      if (item.recipe) updatedDoc.$set.recipe = item.recipe;
+      if (item.image) updatedDoc.$set.image = item.image;
+
+      // If a review is provided, update the reviews array, including the user's email
+      if (item.user && item.review && item.email) {
+        updatedDoc.$push = {
+          reviews: { user: item.user, review: item.review, email: item.email }
+        };
+      }
+
+      try {
+        // Update the meal in the database
+        const result = await mealCollection.updateOne(filter, updatedDoc);
+
+        if (result.modifiedCount > 0) {
+          // Successfully updated, send back the updated meal data
+          const updatedMeal = await mealCollection.findOne(filter);
+          res.send({
+            success: true,
+            meal: updatedMeal,
+          });
+        } else {
+          res.send({ success: false, message: "No changes made" });
+        }
+      } catch (error) {
+        console.error("Error updating meal reviews:", error);
+        res.status(500).send({ success: false, message: "Error updating the meal.", error: error.message });
+      }
     });
+
 
     app.delete('/meal/:id', verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
@@ -258,13 +305,48 @@ async function run() {
     app.post('/payments', async (req, res) => {
       const payment = req.body;
       const paymentResult = await paymentCollection.insertOne(payment);
-      const query = {_id: {
-        $in: payment.cartIds.map(id => new ObjectId(id))
-      }}
+      const query = {
+        _id: {
+          $in: payment.cartIds.map(id => new ObjectId(id))
+        }
+      }
       const deleteResult = await cartCollection.deleteMany(query);
-      res.send({paymentResult, deleteResult});
+      res.send({ paymentResult, deleteResult });
     });
-    
+
+    // Endpoint: Store meal requests
+    app.post("/requests", async (req, res) => {
+      console.log("Received Data:", req.body); // Log incoming request
+
+      const { email, mealName, image, time } = req.body;
+
+      if (!email || !mealName || !image || !time) {
+        console.error("Missing fields:", { email, mealName, image, time });
+        return res.status(400).json({ success: false, message: "All fields are required." });
+      }
+
+      try {
+        const result = await requestCollection.insertOne({ email, mealName, image, time });
+        res.json({ success: true, result });
+      } catch (error) {
+        console.error("Database error:", error);
+        res.status(500).json({ success: false, message: "Server error." });
+      }
+    });
+
+
+    // Endpoint: Get all meal requests
+    app.get('/requests', async (req, res) => {
+      try {
+        const requests = await requestCollection.find({}).toArray();
+        res.send(requests);
+      } catch (error) {
+        console.error("Error fetching meal requests:", error);
+        res.status(500).send({ success: false, message: "Server error." });
+      }
+    });
+
+
 
     // Send a ping to confirm a successful connection
     await client.db('admin').command({ ping: 1 });
