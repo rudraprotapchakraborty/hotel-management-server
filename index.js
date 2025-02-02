@@ -4,6 +4,7 @@ const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const port = process.env.PORT || 5000;
 require('dotenv').config();
+const axios = require("axios");
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const formData = require('form-data');
@@ -13,6 +14,7 @@ const mg = mailgun.client({ username: 'api', key: process.env.MAILGUN_API_KEY })
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded());
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.y7jbt.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -335,6 +337,90 @@ async function run() {
 
       res.send({ paymentResult, deleteResult });
     });
+
+    app.post("/create-ssl-payment", async (req, res) => {
+      const payment = req.body;
+      console.log("payment info", payment);
+
+      const trxid = new ObjectId().toString();
+      payment.transactionId = trxid;
+
+      const initiate = {
+        store_id: 'hotel679f2336d4faf',
+        store_passwd: 'hotel679f2336d4faf@ssl',
+        total_amount: payment.price,
+        currency: 'BDT',
+        tran_id: trxid,
+        success_url: 'http://localhost:5000/success-payment',
+        fail_url: 'http://localhost:5173/fail',
+        cancel_url: 'http://localhost:5173/cancel',
+        ipn_url: 'http://localhost:5000/ipn-success-payment',
+        shipping_method: 'Courier',
+        product_name: 'Computer.',
+        product_category: 'Electronic',
+        product_profile: 'general',
+        cus_name: 'Customer Name',
+        cus_email: `${payment.email}`,
+        cus_add1: 'Dhaka',
+        cus_add2: 'Dhaka',
+        cus_city: 'Dhaka',
+        cus_state: 'Dhaka',
+        cus_postcode: '1000',
+        cus_country: 'Bangladesh',
+        cus_phone: '01711111111',
+        cus_fax: '01711111111',
+        ship_name: 'Customer Name',
+        ship_add1: 'Dhaka',
+        ship_add2: 'Dhaka',
+        ship_city: 'Dhaka',
+        ship_state: 'Dhaka',
+        ship_postcode: 1000,
+        ship_country: 'Bangladesh',
+      }
+
+      const iniResponse = await axios({
+        url: 'https://sandbox.sslcommerz.com/gwprocess/v4/api.php',
+        method: 'POST',
+        data: initiate,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      })
+
+      const saveData = await paymentCollection.insertOne(payment);
+      const gatewayUrl = iniResponse?.data?.GatewayPageURL;
+      res.send({ gatewayUrl });
+    });
+
+    app.post("/success-payment", async (req, res) => {
+      const paymentSuccess = req.body;
+
+      const { data } = await axios.get(`https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php?val_id=${paymentSuccess.val_id}&store_id=hotel679f2336d4faf&store_passwd=hotel679f2336d4faf@ssl&format=json`)
+      if (data.status !== 'VALID') {
+        return res.send({ message: "Invalid payment" })
+      }
+
+      const updatePayment = await paymentCollection.updateOne({ transactionId: data.tran_id }, {
+        $set: {
+          status: "success",
+        }
+      })
+
+      const payment = await paymentCollection.findOne({
+        transactionId: data.tran_id,
+      })
+
+      const query = {
+        _id: {
+          $in: payment.cartIds.map((id) => new ObjectId(id)),
+        }
+      }
+
+      const deleteResult = await cartCollection.deleteMany(query);
+
+      res.redirect('http://localhost:5173/dashboard/cart')
+    });
+
 
     // Endpoint: Store meal requests
     app.post("/requests", async (req, res) => {
